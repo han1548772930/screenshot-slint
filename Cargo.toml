@@ -1,0 +1,22 @@
+[package]
+name = "screenshot-slint"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+screenshots = "0.8"
+slint = { version = "1.11", features = ["backend-qt"] }
+arboard = "3.4"
+
+
+[build-dependencies]
+slint-build = "1.11"
+
+
+[profile.release]
+#panic = "abort"
+codegen-units = 1
+lto = true
+#incremental = false
+opt-level = 3
+

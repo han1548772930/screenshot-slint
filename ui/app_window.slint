@@ -1,0 +1,397 @@
+import { Button, VerticalBox } from "std-widgets.slint";
+
+import { PreviewWindow } from "preview_window.slint";
+export {  PreviewWindow }
+
+struct SelectionArea {
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+}
+
+export component AppWindow inherits Window {
+    no-frame: true;
+    full-screen: true;
+    always-on-top: true;
+    callback selection-complete(SelectionArea);
+    callback cancel-capture();
+    callback debug-log(string);
+    in-out property <bool> is_selecting: false;
+    in-out property <bool> show_mask: false;
+    in-out property <bool> show-decorations: true;
+    in-out property <image> background-screenshot; 
+    
+    // 添加新的属性
+    in-out property <bool> is-dragging: false;
+    property <float> drag-offset-x: 0;
+    property <float> drag-offset-y: 0;
+    property <float> box-width: 0;
+    property <float> box-height: 0;
+    property <float> start-x: 0;
+    property <float> start-y: 0;
+    property <float> current-x: 0;
+    property <float> current-y: 0;
+    in-out property <bool> is-resizing: false;
+    property <string> resize-mode: "";
+    property <float> handle-size: 8;
+    property <string> current-handle: "";
+
+    // 添加工具栏相关变量
+    property <float> toolbar-height: 40;
+    property <float> toolbar-padding: 8;
+    property <color> toolbar-background: #ffffff;
+    property <color> toolbar-border: #555555;
+    property <float> icon-size: 24;
+    property <color> icon-color: #000000;
+    property <color> icon-hover-color: #00aaff;
+    property <float> icon-spacing: 12;
+    property <float> toolbar-border-radius: 6;
+    property <[string]> toolbar-icons: ["save", "copy", "cancel", "settings"];
+    property <string> selected-icon: "";
+    property <color> icon-selected-color: #00ff00;  // 绿色
+    init => {
+        root.debug-log("Window initialized");
+    }
+    FocusScope {
+        width: root.width;
+        height: root.height;
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.cancel-capture();
+                return accept;
+            }
+            return reject;
+        }
+
+        // 背景截图
+        Image {
+            width: parent.width;
+            height: parent.height;
+            source: root.background-screenshot;
+            image-fit: fill;
+        }
+
+        Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: transparent;
+            
+            // 上方遮罩
+            Rectangle {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: min(root.start-y, root.current-y) * 1px;
+                background: #00000055;
+                visible: root.show-mask;
+            }
+            
+            // 下方遮罩
+            Rectangle {
+                x: 0;
+                y: max(root.start-y, root.current-y) * 1px;
+                width: parent.width;
+                height: parent.height - self.y;
+                background: #00000055;
+                visible: root.show-mask;
+            }
+            
+            // 左侧遮罩
+            Rectangle {
+                x: 0;
+                y: min(root.start-y, root.current-y) * 1px;
+                width: min(root.start-x, root.current-x) * 1px;
+                height: abs(root.current-y - root.start-y) * 1px;
+                background: #00000055;
+                visible: root.show-mask;
+            }
+            
+            // 右侧遮罩
+            Rectangle {
+                x: max(root.start-x, root.current-x) * 1px;
+                y: min(root.start-y, root.current-y) * 1px;
+                width: parent.width - self.x;
+                height: abs(root.current-y - root.start-y) * 1px;
+                background: #00000055;
+                visible: root.show-mask;
+            }
+
+            Rectangle {
+                x: min(root.start-x, root.current-x) * 1px;
+                y: min(root.start-y, root.current-y) * 1px;
+                width: abs(root.current-x - root.start-x) * 1px;
+                height: abs(root.current-y - root.start-y) * 1px;
+                border-width: 1px;
+                border-color: show-decorations ? green : transparent;
+                background: transparent;
+                visible: root.is-selecting;
+            }
+
+            Rectangle {
+                x: min(root.start-x, root.current-x) * 1px - root.handle-size / 2 * 1px;
+                y: min(root.start-y, root.current-y) * 1px - root.handle-size / 2 * 1px;
+                width: root.handle-size * 1px;
+                height: root.handle-size * 1px;
+                background: white;
+                border-width: 1px;
+                border-color: blue;
+                visible: root.is-selecting && root.show-decorations;
+            }
+
+            Rectangle {
+                x: (min(root.start-x, root.current-x) + max(root.start-x, root.current-x)) / 2 * 1px - root.handle-size / 2 * 1px;
+                y: min(root.start-y, root.current-y) * 1px - root.handle-size / 2 * 1px;
+                width: root.handle-size * 1px;
+                height: root.handle-size * 1px;
+                background: white;
+                border-width: 1px;
+                border-color: blue;
+                visible: root.is-selecting && root.show-decorations;
+            }
+
+            Rectangle {
+                x: max(root.start-x, root.current-x) * 1px - root.handle-size / 2 * 1px;
+                y: min(root.start-y, root.current-y) * 1px - root.handle-size / 2 * 1px;
+                width: root.handle-size * 1px;
+                height: root.handle-size * 1px;
+                background: white;
+                border-width: 1px;
+                border-color: blue;
+                visible: root.is-selecting && root.show-decorations;
+            }
+
+            Rectangle {
+                x: max(root.start-x, root.current-x) * 1px - root.handle-size / 2 * 1px;
+                y: (min(root.start-y, root.current-y) + max(root.start-y, root.current-y)) / 2 * 1px - root.handle-size / 2 * 1px;
+                width: root.handle-size * 1px;
+                height: root.handle-size * 1px;
+                background: white;
+                border-width: 1px;
+                border-color: blue;
+                visible: root.is-selecting && root.show-decorations;
+            }
+
+            Rectangle {
+                x: max(root.start-x, root.current-x) * 1px - root.handle-size / 2 * 1px;
+                y: max(root.start-y, root.current-y) * 1px - root.handle-size / 2 * 1px;
+                width: root.handle-size * 1px;
+                height: root.handle-size * 1px;
+                background: white;
+                border-width: 1px;
+                border-color: blue;
+                visible: root.is-selecting && root.show-decorations;
+            }
+
+            Rectangle {
+                x: (min(root.start-x, root.current-x) + max(root.start-x, root.current-x)) / 2 * 1px - root.handle-size / 2 * 1px;
+                y: max(root.start-y, root.current-y) * 1px - root.handle-size / 2 * 1px;
+                width: root.handle-size * 1px;
+                height: root.handle-size * 1px;
+                background: white;
+                border-width: 1px;
+                border-color: blue;
+                visible: root.is-selecting && root.show-decorations;
+            }
+
+            Rectangle {
+                x: min(root.start-x, root.current-x) * 1px - root.handle-size / 2 * 1px;
+                y: max(root.start-y, root.current-y) * 1px - root.handle-size / 2 * 1px;
+                width: root.handle-size * 1px;
+                height: root.handle-size * 1px;
+                background: white;
+                border-width: 1px;
+                border-color: blue;
+                visible: root.is-selecting && root.show-decorations;
+            }
+
+            Rectangle {
+                x: min(root.start-x, root.current-x) * 1px - root.handle-size / 2 * 1px;
+                y: (min(root.start-y, root.current-y) + max(root.start-y, root.current-y)) / 2 * 1px - root.handle-size / 2 * 1px;
+                width: root.handle-size * 1px;
+                height: root.handle-size * 1px;
+                background: white;
+                border-width: 1px;
+                border-color: blue;
+                visible: root.is-selecting && root.show-decorations;
+            }
+        }
+
+        TouchArea {
+            // mouse-cursor: crosshair;
+            width: parent.width;
+            height: parent.height;
+            clicked => {
+                parent.focus();
+            }
+            function get-handle-at-point(x: float, y: float) -> string {
+                if (!root.is-selecting) {
+                    return "";
+                }
+                if (abs(x - min(root.start-x, root.current-x)) <= root.handle-size / 2 && abs(y - min(root.start-y, root.current-y)) <= root.handle-size / 2) {
+                    return "nw";
+                }
+                if (abs(x - (min(root.start-x, root.current-x) + max(root.start-x, root.current-x)) / 2) <= root.handle-size / 2 && abs(y - min(root.start-y, root.current-y)) <= root.handle-size / 2) {
+                    return "n";
+                }
+                if (abs(x - max(root.start-x, root.current-x)) <= root.handle-size / 2 && abs(y - min(root.start-y, root.current-y)) <= root.handle-size / 2) {
+                    return "ne";
+                }
+                if (abs(x - max(root.start-x, root.current-x)) <= root.handle-size / 2 && abs(y - (min(root.start-y, root.current-y) + max(root.start-y, root.current-y)) / 2) <= root.handle-size / 2) {
+                    return "e";
+                }
+                if (abs(x - max(root.start-x, root.current-x)) <= root.handle-size / 2 && abs(y - max(root.start-y, root.current-y)) <= root.handle-size / 2) {
+                    return "se";
+                }
+                if (abs(x - (min(root.start-x, root.current-x) + max(root.start-x, root.current-x)) / 2) <= root.handle-size / 2 && abs(y - max(root.start-y, root.current-y)) <= root.handle-size / 2) {
+                    return "s";
+                }
+                if (abs(x - min(root.start-x, root.current-x)) <= root.handle-size / 2 && abs(y - max(root.start-y, root.current-y)) <= root.handle-size / 2) {
+                    return "sw";
+                }
+                if (abs(x - min(root.start-x, root.current-x)) <= root.handle-size / 2 && abs(y - (min(root.start-y, root.current-y) + max(root.start-y, root.current-y)) / 2) <= root.handle-size / 2) {
+                    return "w";
+                }
+                return "";
+            }
+            property <bool> is-initial-selecting: false;
+            pointer-event(event) => {
+                // 在每次鼠标移动时更新全局变量
+                root.current-handle = self.get-handle-at-point(self.mouse-x / 1px, self.mouse-y / 1px);
+                if (event.kind == PointerEventKind.down) {
+                    if (root.current-handle != "") {
+                        root.is-resizing = true;
+                        root.resize-mode = root.current-handle;
+                    } else if (root.is-selecting && self.mouse-x / 1px >= min(root.start-x, root.current-x) && self.mouse-x / 1px <= max(root.start-x, root.current-x) && self.mouse-y / 1px >= min(root.start-y, root.current-y) && self.mouse-y / 1px <= max(root.start-y, root.current-y)) {
+                        root.is-dragging = true;
+                        root.drag-offset-x = self.mouse-x / 1px - min(root.start-x, root.current-x);
+                        root.drag-offset-y = self.mouse-y / 1px - min(root.start-y, root.current-y);
+                    } else if (!root.is-selecting) {
+                        root.start-x = self.mouse-x / 1px;
+                        root.start-y = self.mouse-y / 1px;
+                        root.current-x = self.mouse-x / 1px;
+                        root.current-y = self.mouse-y / 1px;
+                        root.is-selecting = true;
+                        root.show-mask = true;
+                        root.is-dragging = false;
+                        self.is-initial-selecting = true;
+                    }
+                } else if (event.kind == PointerEventKind.move) {
+                    if (root.is-resizing) {
+                        if (root.resize-mode == "nw") {
+                            root.start-x = max(0, min(self.mouse-x / 1px, root.current-x - 10));
+                            root.start-y = max(0, min(self.mouse-y / 1px, root.current-y - 10));
+                        } else if (root.resize-mode == "n") {
+                            root.start-y = max(0, min(self.mouse-y / 1px, root.current-y - 10));
+                        } else if (root.resize-mode == "ne") {
+                            root.current-x = min(root.width / 1px, max(self.mouse-x / 1px, root.start-x + 10));
+                            root.start-y = max(0, min(self.mouse-y / 1px, root.current-y - 10));
+                        } else if (root.resize-mode == "e") {
+                            root.current-x = min(root.width / 1px, max(self.mouse-x / 1px, root.start-x + 10));
+                        } else if (root.resize-mode == "se") {
+                            root.current-x = min(root.width / 1px, max(self.mouse-x / 1px, root.start-x + 10));
+                            root.current-y = min(root.height / 1px, max(self.mouse-y / 1px, root.start-y + 10));
+                        } else if (root.resize-mode == "s") {
+                            root.current-y = min(root.height / 1px, max(self.mouse-y / 1px, root.start-y + 10));
+                        } else if (root.resize-mode == "sw") {
+                            root.start-x = max(0, min(self.mouse-x / 1px, root.current-x - 10));
+                            root.current-y = min(root.height / 1px, max(self.mouse-y / 1px, root.start-y + 10));
+                        } else if (root.resize-mode == "w") {
+                            root.start-x = max(0, min(self.mouse-x / 1px, root.current-x - 10));
+                        }
+                    } else if (root.is-dragging) {
+                        root.box-width = abs(root.current-x - root.start-x);
+                        root.box-height = abs(root.current-y - root.start-y);
+                        root.start-x = max(0, min(self.mouse-x / 1px - root.drag-offset-x, root.width / 1px - root.box-width));
+                        root.start-y = max(0, min(self.mouse-y / 1px - root.drag-offset-y, root.height / 1px - root.box-height));
+                        root.current-x = root.start-x + root.box-width;
+                        root.current-y = root.start-y + root.box-height;
+                    } else if (self.is-initial-selecting) {
+                        root.current-x = self.mouse-x / 1px;
+                        root.current-y = self.mouse-y / 1px;
+                    } else {
+                        if (root.current-handle == "nw" || root.current-handle == "se") {
+                            self.mouse-cursor = MouseCursor.nw-resize;
+                        } else if (root.current-handle == "n" || root.current-handle == "s") {
+                            self.mouse-cursor = MouseCursor.ns-resize;
+                        } else if (root.current-handle == "ne" || root.current-handle == "sw") {
+                            self.mouse-cursor = MouseCursor.ne-resize;
+                        } else if (root.current-handle == "e" || root.current-handle == "w") {
+                            self.mouse-cursor = MouseCursor.ew-resize;
+                        } else if (root.is-selecting && self.mouse-x / 1px >= min(root.start-x, root.current-x) && self.mouse-x / 1px <= max(root.start-x, root.current-x) && self.mouse-y / 1px >= min(root.start-y, root.current-y) && self.mouse-y / 1px <= max(root.start-y, root.current-y)) {
+                            self.mouse-cursor = MouseCursor.crosshair;
+                        } else if (root.is-selecting) {
+                            self.mouse-cursor = MouseCursor.not-allowed;
+                        } else {
+                            self.mouse-cursor = MouseCursor.crosshair;
+                        }
+                    }
+                } else if (event.kind == PointerEventKind.up) {
+                    if (root.is-resizing) {
+                        root.is-resizing = false;
+                        root.resize-mode = "";
+                    } else if (root.is-dragging) {
+                        root.is-dragging = false;
+                    } else if (self.is-initial-selecting) {
+                        self.is-initial-selecting = false;
+                        if (abs(root.current-x - root.start-x) < 5 || abs(root.current-y - root.start-y) < 5) {
+                            root.is-selecting = false;
+                            root.show-mask = false;
+                        }
+                    }
+                }
+                EventResult.accept
+            }
+        }
+
+        Rectangle {
+            property <bool> toolbar-on-top: max(root.start-y, root.current-y) + root.toolbar-height + root.toolbar-padding > root.height / 1px;
+            property <float> toolbar-width: root.toolbar-icons.length * root.icon-size + (root.toolbar-icons.length - 1) * root.icon-spacing + 2 * root.toolbar-padding;
+            x: min(max(min(root.start-x, root.current-x), 0), root.width / 1px - toolbar-width) * 1px;
+            y: toolbar-on-top ? max(0, min(root.start-y, root.current-y) - root.toolbar-height - root.toolbar-padding) * 1px : (max(root.start-y, root.current-y) + root.toolbar-padding) * 1px;
+            width: toolbar-width * 1px;
+            height: root.toolbar-height * 1px;
+            background: root.toolbar-background;
+            border-radius: root.toolbar-border-radius * 1px;
+            border-width: 1px;
+            border-color: root.toolbar-border;
+            visible: root.is-selecting && root.show-decorations;
+            HorizontalLayout {
+                padding: root.toolbar-padding * 1px;
+                spacing: root.icon-spacing * 1px;
+                alignment: center;
+                for icon[index] in root.toolbar-icons: Rectangle {
+                    width: root.icon-size * 1px;
+                    height: root.icon-size * 1px;
+                    background: icon-area.has-hover ? root.icon-hover-color : transparent;
+                    border-radius: 3px;
+                    TouchArea {
+                        icon-area := TouchArea {
+                            clicked => {
+                                root.selected-icon = icon;
+                                if (icon == "save") {
+                                    root.debug-log("保存按钮被点击");
+                                } else if (icon == "copy") {
+                                    root.debug-log("复制按钮被点击");
+                                } else if (icon == "cancel") {
+                                    root.debug-log("取消按钮被点击");
+                                    root.cancel-capture();
+                                } else if (icon == "settings") {
+                                    root.debug-log("设置按钮被点击");
+                                }
+                            }
+                        }
+                    }
+
+                    Image {
+                        width: parent.width;
+                        height: parent.height;
+                        source: @image-url("../resources/square.svg");
+                        image-fit: contain;
+                        colorize: root.selected-icon == icon ? root.icon-selected-color : root.icon-color;
+                    }
+                }
+            }
+        }
+    }
+}
