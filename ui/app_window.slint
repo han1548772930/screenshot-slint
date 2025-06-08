@@ -1,5 +1,5 @@
 import { Button, VerticalBox } from "std-widgets.slint";
-
+import { PenPathComponent } from "penPathComponent.slint";
 import { PreviewWindow } from "preview_window.slint";
 export {  PreviewWindow }
 
@@ -10,46 +10,161 @@ struct SelectionArea {
     height: float,
 }
 
+struct ToolbarIcon {
+    name: string,
+    path: image,
+}
+
+// 矩形对象结构体
+struct RectangleObject {
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    selected: bool,
+}
+
+// 圆形对象结构体
+struct CircleObject {
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    selected: bool,
+}
+struct ArrowObject {
+    start-x: float,
+    start-y: float,
+    end-x: float,
+    end-y: float,
+    selected: bool,
+}
+// 添加画笔路径点结构体
+struct PenPoint {
+    x: float,
+    y: float,
+}
+
+// 添加画笔路径结构体
+struct PenPath {
+    points: [PenPoint],
+    color: color,
+    width: float,
+    // 添加边界框字段
+    min-x: float,
+    max-x: float,
+    min-y: float,
+    max-y: float,
+    // 添加命令字段
+    commands: string,
+}
 export component AppWindow inherits Window {
     no-frame: true;
     full-screen: true;
     always-on-top: true;
+       // 简化的画笔路径管理回调
+    callback create-pen-path-component(float, float, float, float, string, color, float);
+    callback remove-last-pen-path();
+    // 回调函数
     callback selection-complete(SelectionArea);
     callback cancel-capture();
     callback debug-log(string);
-    in-out property <bool> is_selecting: false;
-    in-out property <bool> show_mask: false;
-    in-out property <bool> show-decorations: true;
-    in-out property <image> background-screenshot; 
+    callback mouse-event(/* event_type */ string, /* x */ float, /* y */ float);
+    callback toolbar-clicked(string);
     
-    // 添加新的属性
-    in-out property <bool> is-dragging: false;
-    property <float> drag-offset-x: 0;
-    property <float> drag-offset-y: 0;
-    property <float> box-width: 0;
-    property <float> box-height: 0;
-    property <float> start-x: 0;
-    property <float> start-y: 0;
-    property <float> current-x: 0;
-    property <float> current-y: 0;
-    in-out property <bool> is-resizing: false;
-    property <string> resize-mode: "";
+    // 从 Rust 设置的状态属性
+    in-out property <bool> is-selecting: false;
+    in-out property <bool> show-mask: false;
+    in-out property <bool> show-decorations: true;
+    in-out property <image> background-screenshot;
+    in-out property <string> cursor-type: "crosshair";
+    
+    // 选区坐标 (由 Rust 更新)
+    in-out property <float> start-x: 0;
+    in-out property <float> start-y: 0;
+    in-out property <float> current-x: 0;
+    in-out property <float> current-y: 0;
+    
+    // UI 配置属性
     property <float> handle-size: 8;
-    property <string> current-handle: "";
-
-    // 添加工具栏相关变量
     property <float> toolbar-height: 40;
     property <float> toolbar-padding: 8;
+    property <float> toolbar-margin: 2;
     property <color> toolbar-background: #ffffff;
     property <color> toolbar-border: #555555;
-    property <float> icon-size: 24;
+    property <float> icon-size: 22;
+    property <float> icon-hover-size: 30;
     property <color> icon-color: #000000;
-    property <color> icon-hover-color: #00aaff;
+    property <color> icon-hover-color: #e0e0e0;
     property <float> icon-spacing: 12;
     property <float> toolbar-border-radius: 6;
-    property <[string]> toolbar-icons: ["save", "copy", "cancel", "settings"];
-    property <string> selected-icon: "";
-    property <color> icon-selected-color: #00ff00;  // 绿色
+    property <color> icon-selected-color: #71bb78;
+    
+    // 颜色配置属性（通用）
+    property <color> saved-object-color: #ff0044;     // 保存的对象颜色（蓝色）
+    property <color> current-object-color: #ff0044;   // 当前绘制对象颜色（红色）
+    property <color> current-object-handle-color: #272425; // 当前对象控制柄颜色
+    property <float> object-border-width: 2;          // 对象边框宽度
+
+    // 简化的画笔属性
+    in-out property <bool> show-current-pen-path: false;
+    in-out property <float> current-pen-min-x: 0;
+    in-out property <float> current-pen-max-x: 0;
+    in-out property <float> current-pen-min-y: 0;
+    in-out property <float> current-pen-max-y: 0;
+    in-out property <string> current-pen-path-commands: "";
+    property <color> pen-color: #ff0044;
+    property <float> pen-width: 3;
+
+    // 动态画笔路径容器
+    property <[{min-x: float, max-x: float, min-y: float, max-y: float, commands: string, color: color, width: float}]> pen-paths: [];
+    property <[ToolbarIcon]> toolbar-icons: [
+        { name: "square", path: @image-url("../resources/square.svg") },
+        { name: "circle", path: @image-url("../resources/circle.svg") },
+        { name: "arrow", path: @image-url("../resources/arrow.svg") },
+        { name: "pen", path: @image-url("../resources/pen.svg") },
+        { name: "clipboard", path: @image-url("../resources/clipboard.svg") },
+        { name: "undo", path: @image-url("../resources/undo.svg") },
+        { name: "download", path: @image-url("../resources/download.svg") },
+        { name: "close", path: @image-url("../resources/x.svg") },
+        { name: "check", path: @image-url("../resources/check.svg") },
+    ];
+    in-out property <string> selected-icon: "";
+
+    // 绘制模式相关属性
+    in-out property <bool> is-drawing-mode: false;
+    in-out property <string> draw-object-type: "rectangle";
+
+    // 当前矩形对象属性
+    in-out property <bool> show-current-rectangle: false;
+    in-out property <bool> is-drawing-current-rectangle: false;
+    in-out property <float> current-rectangle-x: 0;
+    in-out property <float> current-rectangle-y: 0;
+    in-out property <float> current-rectangle-width: 0;
+    in-out property <float> current-rectangle-height: 0;
+    in-out property <bool> current-rectangle-selected: false;
+
+    // 当前圆形对象属性
+    in-out property <bool> show-current-circle: false;
+    in-out property <bool> is-drawing-current-circle: false;
+    in-out property <float> current-circle-x: 0;
+    in-out property <float> current-circle-y: 0;
+    in-out property <float> current-circle-width: 0;
+    in-out property <float> current-circle-height: 0;
+    in-out property <bool> current-circle-selected: false;
+     // 当前箭头对象属性
+    in-out property <bool> show-current-arrow: false;
+    in-out property <bool> is-drawing-current-arrow: false;
+    in-out property <float> current-arrow-start-x: 0;
+    in-out property <float> current-arrow-start-y: 0;
+    in-out property <float> current-arrow-end-x: 0;
+    in-out property <float> current-arrow-end-y: 0;
+    in-out property <bool> current-arrow-selected: false;
+
+    // 保存的对象列表（分别处理）
+    in-out property <[RectangleObject]> saved-rectangles: [];
+    in-out property <[CircleObject]> saved-circles: [];
+    in-out property <[ArrowObject]> saved-arrows: [];
     init => {
         root.debug-log("Window initialized");
     }
@@ -72,283 +187,651 @@ export component AppWindow inherits Window {
             image-fit: fill;
         }
 
-        Rectangle {
-            width: parent.width;
-            height: parent.height;
-            background: transparent;
+        for path-data[index] in root.pen-paths: Path {
+            x: (path-data.min-x - 10) * 1px;
+            y: (path-data.min-y - 10) * 1px;
+            width: (path-data.max-x - path-data.min-x + 20) * 1px;
+            height: (path-data.max-y - path-data.min-y + 20) * 1px;
+            fill: transparent;
+            stroke: path-data.color;
+            stroke-width: path-data.width * 1px;
+            commands: path-data.commands;
+        }
+
+        // 当前画笔路径
+        Path {
+            x: (root.current-pen-min-x - 10) * 1px;
+            y: (root.current-pen-min-y - 10) * 1px;
+            width: (root.current-pen-max-x - root.current-pen-min-x + 20) * 1px;
+            height: (root.current-pen-max-y - root.current-pen-min-y + 20) * 1px;
+            fill: transparent;
+            stroke: root.pen-color;
+            stroke-width: root.pen-width * 1px;
+            visible: root.show-current-pen-path;
+            commands: root.current-pen-path-commands;
+        }
+
+        for saved-arrow[index] in root.saved-arrows: Path {
+            x: (min(saved-arrow.start-x, saved-arrow.end-x) - 20) * 1px;
+            y: (min(saved-arrow.start-y, saved-arrow.end-y) - 20) * 1px;
+            width: (abs(saved-arrow.end-x - saved-arrow.start-x) + 40) * 1px;
+            height: (abs(saved-arrow.end-y - saved-arrow.start-y) + 40) * 1px;
+            fill: transparent;
+            stroke: root.saved-object-color;
+            stroke-width: root.object-border-width * 1px;
             
-            // 上方遮罩
-            Rectangle {
-                x: 0;
-                y: 0;
-                width: parent.width;
-                height: min(root.start-y, root.current-y) * 1px;
-                background: #00000055;
-                visible: root.show-mask;
+            // 箭头线段和箭头头部
+            MoveTo {
+                x: saved-arrow.start-x - (min(saved-arrow.start-x, saved-arrow.end-x) - 20);
+                y: saved-arrow.start-y - (min(saved-arrow.start-y, saved-arrow.end-y) - 20);
+            }
+
+            LineTo {
+                x: saved-arrow.end-x - (min(saved-arrow.start-x, saved-arrow.end-x) - 20);
+                y: saved-arrow.end-y - (min(saved-arrow.start-y, saved-arrow.end-y) - 20);
             }
             
-            // 下方遮罩
-            Rectangle {
-                x: 0;
-                y: max(root.start-y, root.current-y) * 1px;
-                width: parent.width;
-                height: parent.height - self.y;
-                background: #00000055;
-                visible: root.show-mask;
+            // 箭头头部 - 计算箭头头的两个边
+            property <float> arrow-head-length: 15;
+            property <angle> arrow-head-angle: 30deg;
+            property <float> dx: saved-arrow.end-x - saved-arrow.start-x;
+            property <float> dy: saved-arrow.end-y - saved-arrow.start-y;
+            property <float> length: sqrt(dx * dx + dy * dy);
+            property <float> unit-x: length > 0 ? dx / length : 0;
+            property <float> unit-y: length > 0 ? dy / length : 0;
+            
+            // 箭头头部左边
+            MoveTo {
+                x: saved-arrow.end-x - (min(saved-arrow.start-x, saved-arrow.end-x) - 20);
+                y: saved-arrow.end-y - (min(saved-arrow.start-y, saved-arrow.end-y) - 20);
+            }
+
+            LineTo {
+                x: (saved-arrow.end-x - arrow-head-length * (unit-x * cos(arrow-head-angle) - unit-y * sin(arrow-head-angle))) - (min(saved-arrow.start-x, saved-arrow.end-x) - 20);
+                y: (saved-arrow.end-y - arrow-head-length * (unit-y * cos(arrow-head-angle) + unit-x * sin(arrow-head-angle))) - (min(saved-arrow.start-y, saved-arrow.end-y) - 20);
             }
             
-            // 左侧遮罩
-            Rectangle {
-                x: 0;
-                y: min(root.start-y, root.current-y) * 1px;
-                width: min(root.start-x, root.current-x) * 1px;
-                height: abs(root.current-y - root.start-y) * 1px;
-                background: #00000055;
-                visible: root.show-mask;
-            }
-            
-            // 右侧遮罩
-            Rectangle {
-                x: max(root.start-x, root.current-x) * 1px;
-                y: min(root.start-y, root.current-y) * 1px;
-                width: parent.width - self.x;
-                height: abs(root.current-y - root.start-y) * 1px;
-                background: #00000055;
-                visible: root.show-mask;
+            // 箭头头部右边
+            MoveTo {
+                x: saved-arrow.end-x - (min(saved-arrow.start-x, saved-arrow.end-x) - 20);
+                y: saved-arrow.end-y - (min(saved-arrow.start-y, saved-arrow.end-y) - 20);
             }
 
-            Rectangle {
-                x: min(root.start-x, root.current-x) * 1px;
-                y: min(root.start-y, root.current-y) * 1px;
-                width: abs(root.current-x - root.start-x) * 1px;
-                height: abs(root.current-y - root.start-y) * 1px;
-                border-width: 1px;
-                border-color: show-decorations ? green : transparent;
-                background: transparent;
-                visible: root.is-selecting;
-            }
-
-            Rectangle {
-                x: min(root.start-x, root.current-x) * 1px - root.handle-size / 2 * 1px;
-                y: min(root.start-y, root.current-y) * 1px - root.handle-size / 2 * 1px;
-                width: root.handle-size * 1px;
-                height: root.handle-size * 1px;
-                background: white;
-                border-width: 1px;
-                border-color: blue;
-                visible: root.is-selecting && root.show-decorations;
-            }
-
-            Rectangle {
-                x: (min(root.start-x, root.current-x) + max(root.start-x, root.current-x)) / 2 * 1px - root.handle-size / 2 * 1px;
-                y: min(root.start-y, root.current-y) * 1px - root.handle-size / 2 * 1px;
-                width: root.handle-size * 1px;
-                height: root.handle-size * 1px;
-                background: white;
-                border-width: 1px;
-                border-color: blue;
-                visible: root.is-selecting && root.show-decorations;
-            }
-
-            Rectangle {
-                x: max(root.start-x, root.current-x) * 1px - root.handle-size / 2 * 1px;
-                y: min(root.start-y, root.current-y) * 1px - root.handle-size / 2 * 1px;
-                width: root.handle-size * 1px;
-                height: root.handle-size * 1px;
-                background: white;
-                border-width: 1px;
-                border-color: blue;
-                visible: root.is-selecting && root.show-decorations;
-            }
-
-            Rectangle {
-                x: max(root.start-x, root.current-x) * 1px - root.handle-size / 2 * 1px;
-                y: (min(root.start-y, root.current-y) + max(root.start-y, root.current-y)) / 2 * 1px - root.handle-size / 2 * 1px;
-                width: root.handle-size * 1px;
-                height: root.handle-size * 1px;
-                background: white;
-                border-width: 1px;
-                border-color: blue;
-                visible: root.is-selecting && root.show-decorations;
-            }
-
-            Rectangle {
-                x: max(root.start-x, root.current-x) * 1px - root.handle-size / 2 * 1px;
-                y: max(root.start-y, root.current-y) * 1px - root.handle-size / 2 * 1px;
-                width: root.handle-size * 1px;
-                height: root.handle-size * 1px;
-                background: white;
-                border-width: 1px;
-                border-color: blue;
-                visible: root.is-selecting && root.show-decorations;
-            }
-
-            Rectangle {
-                x: (min(root.start-x, root.current-x) + max(root.start-x, root.current-x)) / 2 * 1px - root.handle-size / 2 * 1px;
-                y: max(root.start-y, root.current-y) * 1px - root.handle-size / 2 * 1px;
-                width: root.handle-size * 1px;
-                height: root.handle-size * 1px;
-                background: white;
-                border-width: 1px;
-                border-color: blue;
-                visible: root.is-selecting && root.show-decorations;
-            }
-
-            Rectangle {
-                x: min(root.start-x, root.current-x) * 1px - root.handle-size / 2 * 1px;
-                y: max(root.start-y, root.current-y) * 1px - root.handle-size / 2 * 1px;
-                width: root.handle-size * 1px;
-                height: root.handle-size * 1px;
-                background: white;
-                border-width: 1px;
-                border-color: blue;
-                visible: root.is-selecting && root.show-decorations;
-            }
-
-            Rectangle {
-                x: min(root.start-x, root.current-x) * 1px - root.handle-size / 2 * 1px;
-                y: (min(root.start-y, root.current-y) + max(root.start-y, root.current-y)) / 2 * 1px - root.handle-size / 2 * 1px;
-                width: root.handle-size * 1px;
-                height: root.handle-size * 1px;
-                background: white;
-                border-width: 1px;
-                border-color: blue;
-                visible: root.is-selecting && root.show-decorations;
+            LineTo {
+                x: (saved-arrow.end-x - arrow-head-length * (unit-x * cos(-arrow-head-angle) - unit-y * sin(-arrow-head-angle))) - (min(saved-arrow.start-x, saved-arrow.end-x) - 20);
+                y: (saved-arrow.end-y - arrow-head-length * (unit-y * cos(-arrow-head-angle) + unit-x * sin(-arrow-head-angle))) - (min(saved-arrow.start-y, saved-arrow.end-y) - 20);
             }
         }
 
+        // 当前箭头对象
+        Path {
+            x: (min(root.current-arrow-start-x, root.current-arrow-end-x) - 20) * 1px;
+            y: (min(root.current-arrow-start-y, root.current-arrow-end-y) - 20) * 1px;
+            width: (abs(root.current-arrow-end-x - root.current-arrow-start-x) + 40) * 1px;
+            height: (abs(root.current-arrow-end-y - root.current-arrow-start-y) + 40) * 1px;
+            fill: transparent;
+            stroke: root.current-object-color;
+            stroke-width: root.object-border-width * 1px;
+            visible: root.show-current-arrow;
+            
+            // 箭头线段
+            MoveTo {
+                x: root.current-arrow-start-x - (min(root.current-arrow-start-x, root.current-arrow-end-x) - 20);
+                y: root.current-arrow-start-y - (min(root.current-arrow-start-y, root.current-arrow-end-y) - 20);
+            }
+
+            LineTo {
+                x: root.current-arrow-end-x - (min(root.current-arrow-start-x, root.current-arrow-end-x) - 20);
+                y: root.current-arrow-end-y - (min(root.current-arrow-start-y, root.current-arrow-end-y) - 20);
+            }
+            
+            // 箭头头部
+            property <float> arrow-head-length: 15;
+            property <angle> arrow-head-angle: 30deg;
+            property <float> dx: root.current-arrow-end-x - root.current-arrow-start-x;
+            property <float> dy: root.current-arrow-end-y - root.current-arrow-start-y;
+            property <float> length: sqrt(dx * dx + dy * dy);
+            property <float> unit-x: length > 0 ? dx / length : 0;
+            property <float> unit-y: length > 0 ? dy / length : 0;
+            
+            // 箭头头部左边
+            MoveTo {
+                x: root.current-arrow-end-x - (min(root.current-arrow-start-x, root.current-arrow-end-x) - 20);
+                y: root.current-arrow-end-y - (min(root.current-arrow-start-y, root.current-arrow-end-y) - 20);
+            }
+
+            LineTo {
+                x: (root.current-arrow-end-x - arrow-head-length * (unit-x * cos(arrow-head-angle) - unit-y * sin(arrow-head-angle))) - (min(root.current-arrow-start-x, root.current-arrow-end-x) - 20);
+                y: (root.current-arrow-end-y - arrow-head-length * (unit-y * cos(arrow-head-angle) + unit-x * sin(arrow-head-angle))) - (min(root.current-arrow-start-y, root.current-arrow-end-y) - 20);
+            }
+            
+            // 箭头头部右边
+            MoveTo {
+                x: root.current-arrow-end-x - (min(root.current-arrow-start-x, root.current-arrow-end-x) - 20);
+                y: root.current-arrow-end-y - (min(root.current-arrow-start-y, root.current-arrow-end-y) - 20);
+            }
+
+            LineTo {
+                x: (root.current-arrow-end-x - arrow-head-length * (unit-x * cos(-arrow-head-angle) - unit-y * sin(-arrow-head-angle))) - (min(root.current-arrow-start-x, root.current-arrow-end-x) - 20);
+                y: (root.current-arrow-end-y - arrow-head-length * (unit-y * cos(-arrow-head-angle) + unit-x * sin(-arrow-head-angle))) - (min(root.current-arrow-start-y, root.current-arrow-end-y) - 20);
+            }
+        }
+
+        // 当前箭头虚线（绘制时显示）
+        Path {
+            x: (min(root.current-arrow-start-x, root.current-arrow-end-x) - 5) * 1px;
+            y: (min(root.current-arrow-start-y, root.current-arrow-end-y) - 5) * 1px;
+            width: (abs(root.current-arrow-end-x - root.current-arrow-start-x) + 10) * 1px;
+            height: (abs(root.current-arrow-end-y - root.current-arrow-start-y) + 10) * 1px;
+            fill: transparent;
+            stroke: #808080;
+            stroke-width: 1px;
+            visible: root.show-current-arrow && root.is-drawing-current-arrow;
+            opacity: 0.7;
+            MoveTo {
+                x: root.current-arrow-start-x - (min(root.current-arrow-start-x, root.current-arrow-end-x) - 5);
+                y: root.current-arrow-start-y - (min(root.current-arrow-start-y, root.current-arrow-end-y) - 5);
+            }
+
+            LineTo {
+                x: root.current-arrow-end-x - (min(root.current-arrow-start-x, root.current-arrow-end-x) - 5);
+                y: root.current-arrow-end-y - (min(root.current-arrow-start-y, root.current-arrow-end-y) - 5);
+            }
+        }
+
+
+        // 箭头起点控制柄
+        Rectangle {
+            x: root.current-arrow-start-x * 1px - root.handle-size / 2 * 1px;
+            y: root.current-arrow-start-y * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: root.current-object-handle-color;
+            border-radius: root.handle-size / 2 * 1px;
+            visible: root.show-current-arrow && root.current-arrow-selected;
+        }
+
+        // 箭头终点控制柄
+        Rectangle {
+            x: root.current-arrow-end-x * 1px - root.handle-size / 2 * 1px;
+            y: root.current-arrow-end-y * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-radius: root.handle-size / 2 * 1px;
+            border-color: root.current-object-handle-color;
+            visible: root.show-current-arrow && root.current-arrow-selected;
+        }
+        
+        // 显示所有保存的矩形对象
+        for saved-rect[index] in root.saved-rectangles: Rectangle {
+            x: saved-rect.x * 1px;
+            y: saved-rect.y * 1px;
+            width: saved-rect.width * 1px;
+            height: saved-rect.height * 1px;
+            border-width: root.object-border-width * 1px;
+            border-color: root.saved-object-color;
+            background: transparent;
+        }
+
+        // 显示所有保存的圆形对象
+        for saved-circle[index] in root.saved-circles: Rectangle {
+            x: saved-circle.x * 1px;
+            y: saved-circle.y * 1px;
+            width: saved-circle.width * 1px;
+            height: saved-circle.height * 1px;
+            border-width: root.object-border-width * 1px;
+            border-color: root.saved-object-color;
+            background: transparent;
+            border-radius: min(saved-circle.width, saved-circle.height) / 2 * 1px;
+        }
+
+        // 当前矩形对象边框
+        Rectangle {
+            x: root.current-rectangle-x * 1px;
+            y: root.current-rectangle-y * 1px;
+            width: root.current-rectangle-width * 1px;
+            height: root.current-rectangle-height * 1px;
+            border-width: root.object-border-width * 1px;
+            border-color: root.current-object-color;
+            background: transparent;
+            visible: root.show-current-rectangle;
+        }
+
+        // 当前矩形对象虚线边框（绘制时显示）
+        Rectangle {
+            x: root.current-rectangle-x * 1px;
+            y: root.current-rectangle-y * 1px;
+            width: root.current-rectangle-width * 1px;
+            height: root.current-rectangle-height * 1px;
+            border-width: 1px;
+            border-color: #808080;
+            background: transparent;
+            visible: root.show-current-rectangle && root.is-drawing-current-rectangle;
+            opacity: 0.7;
+        }
+
+        // 当前圆形对象边框
+        Rectangle {
+            x: root.current-circle-x * 1px;
+            y: root.current-circle-y * 1px;
+            width: root.current-circle-width * 1px;
+            height: root.current-circle-height * 1px;
+            border-width: root.object-border-width * 1px;
+            border-color: root.current-object-color;
+            background: transparent;
+            border-radius: min(root.current-circle-width, root.current-circle-height) / 2 * 1px;
+            visible: root.show-current-circle;
+        }
+
+        // 当前圆形对象虚线边框（绘制时显示）
+        Rectangle {
+            x: root.current-circle-x * 1px;
+            y: root.current-circle-y * 1px;
+            width: root.current-circle-width * 1px;
+            height: root.current-circle-height * 1px;
+            border-width: 1px;
+            border-color: #808080;
+            background: transparent;
+            visible: root.show-current-circle && (root.is-drawing-current-circle || root.current-circle-selected);
+            opacity: 0.7;
+        }
+
+        // 矩形控制柄 - 只在选中时显示
+        // NW
+        Rectangle {
+            x: root.current-rectangle-x * 1px - root.handle-size / 2 * 1px;
+            y: root.current-rectangle-y * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: root.current-object-handle-color;
+            visible: root.show-current-rectangle && root.current-rectangle-selected;
+        }
+
+        // N
+        Rectangle {
+            x: (root.current-rectangle-x + root.current-rectangle-width / 2) * 1px - root.handle-size / 2 * 1px;
+            y: root.current-rectangle-y * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: root.current-object-handle-color;
+            visible: root.show-current-rectangle && root.current-rectangle-selected;
+        }
+
+        // NE
+        Rectangle {
+            x: (root.current-rectangle-x + root.current-rectangle-width) * 1px - root.handle-size / 2 * 1px;
+            y: root.current-rectangle-y * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: root.current-object-handle-color;
+            visible: root.show-current-rectangle && root.current-rectangle-selected;
+        }
+
+        // E
+        Rectangle {
+            x: (root.current-rectangle-x + root.current-rectangle-width) * 1px - root.handle-size / 2 * 1px;
+            y: (root.current-rectangle-y + root.current-rectangle-height / 2) * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: root.current-object-handle-color;
+            visible: root.show-current-rectangle && root.current-rectangle-selected;
+        }
+
+        // SE
+        Rectangle {
+            x: (root.current-rectangle-x + root.current-rectangle-width) * 1px - root.handle-size / 2 * 1px;
+            y: (root.current-rectangle-y + root.current-rectangle-height) * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: root.current-object-handle-color;
+            visible: root.show-current-rectangle && root.current-rectangle-selected;
+        }
+
+        // S
+        Rectangle {
+            x: (root.current-rectangle-x + root.current-rectangle-width / 2) * 1px - root.handle-size / 2 * 1px;
+            y: (root.current-rectangle-y + root.current-rectangle-height) * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: root.current-object-handle-color;
+            visible: root.show-current-rectangle && root.current-rectangle-selected;
+        }
+
+        // SW
+        Rectangle {
+            x: root.current-rectangle-x * 1px - root.handle-size / 2 * 1px;
+            y: (root.current-rectangle-y + root.current-rectangle-height) * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: root.current-object-handle-color;
+            visible: root.show-current-rectangle && root.current-rectangle-selected;
+        }
+
+        // W
+        Rectangle {
+            x: root.current-rectangle-x * 1px - root.handle-size / 2 * 1px;
+            y: (root.current-rectangle-y + root.current-rectangle-height / 2) * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: root.current-object-handle-color;
+            visible: root.show-current-rectangle && root.current-rectangle-selected;
+        }
+
+        // 圆形控制柄 - 只在选中时显示（位置与包围盒相同）
+        // NW
+        Rectangle {
+            x: root.current-circle-x * 1px - root.handle-size / 2 * 1px;
+            y: root.current-circle-y * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: root.current-object-handle-color;
+            visible: root.show-current-circle && root.current-circle-selected;
+        }
+
+        // N
+        Rectangle {
+            x: (root.current-circle-x + root.current-circle-width / 2) * 1px - root.handle-size / 2 * 1px;
+            y: root.current-circle-y * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: root.current-object-handle-color;
+            visible: root.show-current-circle && root.current-circle-selected;
+        }
+
+        // NE
+        Rectangle {
+            x: (root.current-circle-x + root.current-circle-width) * 1px - root.handle-size / 2 * 1px;
+            y: root.current-circle-y * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: root.current-object-handle-color;
+            visible: root.show-current-circle && root.current-circle-selected;
+        }
+
+        // E
+        Rectangle {
+            x: (root.current-circle-x + root.current-circle-width) * 1px - root.handle-size / 2 * 1px;
+            y: (root.current-circle-y + root.current-circle-height / 2) * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: root.current-object-handle-color;
+            visible: root.show-current-circle && root.current-circle-selected;
+        }
+
+        // SE
+        Rectangle {
+            x: (root.current-circle-x + root.current-circle-width) * 1px - root.handle-size / 2 * 1px;
+            y: (root.current-circle-y + root.current-circle-height) * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: root.current-object-handle-color;
+            visible: root.show-current-circle && root.current-circle-selected;
+        }
+
+        // S
+        Rectangle {
+            x: (root.current-circle-x + root.current-circle-width / 2) * 1px - root.handle-size / 2 * 1px;
+            y: (root.current-circle-y + root.current-circle-height) * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: root.current-object-handle-color;
+            visible: root.show-current-circle && root.current-circle-selected;
+        }
+
+        // SW
+        Rectangle {
+            x: root.current-circle-x * 1px - root.handle-size / 2 * 1px;
+            y: (root.current-circle-y + root.current-circle-height) * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: root.current-object-handle-color;
+            visible: root.show-current-circle && root.current-circle-selected;
+        }
+
+        // W
+        Rectangle {
+            x: root.current-circle-x * 1px - root.handle-size / 2 * 1px;
+            y: (root.current-circle-y + root.current-circle-height / 2) * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: root.current-object-handle-color;
+            visible: root.show-current-circle && root.current-circle-selected;
+        }
+
+        // ...existing code...
+        // 上方遮罩
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: min(root.start-y, root.current-y) * 1px;
+            background: #00000055;
+            visible: root.show-mask && root.is-selecting;
+        }
+            
+        // 下方遮罩
+        Rectangle {
+            x: 0;
+            y: max(root.start-y, root.current-y) * 1px;
+            width: parent.width;
+            height: parent.height - self.y;
+            background: #00000055;
+            visible: root.show-mask && root.is-selecting;
+        }
+            
+        // 左侧遮罩
+        Rectangle {
+            x: 0;
+            y: min(root.start-y, root.current-y) * 1px;
+            width: min(root.start-x, root.current-x) * 1px;
+            height: abs(root.current-y - root.start-y) * 1px;
+            background: #00000055;
+            visible: root.show-mask && root.is-selecting;
+        }
+            
+        // 右侧遮罩
+        Rectangle {
+            x: max(root.start-x, root.current-x) * 1px;
+            y: min(root.start-y, root.current-y) * 1px;
+            width: parent.width - self.x;
+            height: abs(root.current-y - root.start-y) * 1px;
+            background: #00000055;
+            visible: root.show-mask && root.is-selecting;
+        }
+
+        // 选区边框（只在非画框模式下显示）
+        Rectangle {
+            x: min(root.start-x, root.current-x) * 1px;
+            y: min(root.start-y, root.current-y) * 1px;
+            width: abs(root.current-x - root.start-x) * 1px;
+            height: abs(root.current-y - root.start-y) * 1px;
+            border-width: 1px;
+            border-color: root.show-decorations ? green : transparent;
+            background: transparent;
+            visible: root.is-selecting;
+        }
+
+        // 选区控制柄（只在非画框模式下显示）
+        // 控制柄 - NW
+        Rectangle {
+            x: min(root.start-x, root.current-x) * 1px - root.handle-size / 2 * 1px;
+            y: min(root.start-y, root.current-y) * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: blue;
+            visible: root.is-selecting && root.show-decorations && !root.is-drawing-mode;
+        }
+
+        // 控制柄 - N
+        Rectangle {
+            x: (min(root.start-x, root.current-x) + max(root.start-x, root.current-x)) / 2 * 1px - root.handle-size / 2 * 1px;
+            y: min(root.start-y, root.current-y) * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: blue;
+            visible: root.is-selecting && root.show-decorations && !root.is-drawing-mode;
+        }
+
+        // 控制柄 - NE
+        Rectangle {
+            x: max(root.start-x, root.current-x) * 1px - root.handle-size / 2 * 1px;
+            y: min(root.start-y, root.current-y) * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: blue;
+            visible: root.is-selecting && root.show-decorations && !root.is-drawing-mode;
+        }
+
+        // 控制柄 - E
+        Rectangle {
+            x: max(root.start-x, root.current-x) * 1px - root.handle-size / 2 * 1px;
+            y: (min(root.start-y, root.current-y) + max(root.start-y, root.current-y)) / 2 * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: blue;
+            visible: root.is-selecting && root.show-decorations && !root.is-drawing-mode;
+        }
+
+        // 控制柄 - SE
+        Rectangle {
+            x: max(root.start-x, root.current-x) * 1px - root.handle-size / 2 * 1px;
+            y: max(root.start-y, root.current-y) * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: blue;
+            visible: root.is-selecting && root.show-decorations && !root.is-drawing-mode;
+        }
+
+        // 控制柄 - S
+        Rectangle {
+            x: (min(root.start-x, root.current-x) + max(root.start-x, root.current-x)) / 2 * 1px - root.handle-size / 2 * 1px;
+            y: max(root.start-y, root.current-y) * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: blue;
+            visible: root.is-selecting && root.show-decorations && !root.is-drawing-mode;
+        }
+
+        // 控制柄 - SW
+        Rectangle {
+            x: min(root.start-x, root.current-x) * 1px - root.handle-size / 2 * 1px;
+            y: max(root.start-y, root.current-y) * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: blue;
+            visible: root.is-selecting && root.show-decorations && !root.is-drawing-mode;
+        }
+
+        // 控制柄 - W
+        Rectangle {
+            x: min(root.start-x, root.current-x) * 1px - root.handle-size / 2 * 1px;
+            y: (min(root.start-y, root.current-y) + max(root.start-y, root.current-y)) / 2 * 1px - root.handle-size / 2 * 1px;
+            width: root.handle-size * 1px;
+            height: root.handle-size * 1px;
+            background: white;
+            border-width: 1px;
+            border-color: blue;
+            visible: root.is-selecting && root.show-decorations && !root.is-drawing-mode;
+        }
+
+        // 鼠标交互区域
         TouchArea {
-            // mouse-cursor: crosshair;
             width: parent.width;
             height: parent.height;
+            
+            // 根据 Rust 计算的光标类型设置光标
+            mouse-cursor: {
+                if (root.cursor-type == "crosshair") {
+                    MouseCursor.crosshair
+                } else if (root.cursor-type == "move") {
+                    MouseCursor.move
+                } else if (root.cursor-type == "pointer") {
+                    MouseCursor.pointer
+                } else if (root.cursor-type == "nw-resize") {
+                    MouseCursor.nw-resize
+                } else if (root.cursor-type == "ns-resize") {
+                    MouseCursor.ns-resize
+                } else if (root.cursor-type == "ne-resize") {
+                    MouseCursor.ne-resize
+                } else if (root.cursor-type == "ew-resize") {
+                    MouseCursor.ew-resize
+                } else if (root.cursor-type == "not-allowed") {
+                    MouseCursor.not-allowed
+                } else {
+                    MouseCursor.default
+                }
+            };
             clicked => {
                 parent.focus();
             }
-            function get-handle-at-point(x: float, y: float) -> string {
-                if (!root.is-selecting) {
-                    return "";
-                }
-                if (abs(x - min(root.start-x, root.current-x)) <= root.handle-size / 2 && abs(y - min(root.start-y, root.current-y)) <= root.handle-size / 2) {
-                    return "nw";
-                }
-                if (abs(x - (min(root.start-x, root.current-x) + max(root.start-x, root.current-x)) / 2) <= root.handle-size / 2 && abs(y - min(root.start-y, root.current-y)) <= root.handle-size / 2) {
-                    return "n";
-                }
-                if (abs(x - max(root.start-x, root.current-x)) <= root.handle-size / 2 && abs(y - min(root.start-y, root.current-y)) <= root.handle-size / 2) {
-                    return "ne";
-                }
-                if (abs(x - max(root.start-x, root.current-x)) <= root.handle-size / 2 && abs(y - (min(root.start-y, root.current-y) + max(root.start-y, root.current-y)) / 2) <= root.handle-size / 2) {
-                    return "e";
-                }
-                if (abs(x - max(root.start-x, root.current-x)) <= root.handle-size / 2 && abs(y - max(root.start-y, root.current-y)) <= root.handle-size / 2) {
-                    return "se";
-                }
-                if (abs(x - (min(root.start-x, root.current-x) + max(root.start-x, root.current-x)) / 2) <= root.handle-size / 2 && abs(y - max(root.start-y, root.current-y)) <= root.handle-size / 2) {
-                    return "s";
-                }
-                if (abs(x - min(root.start-x, root.current-x)) <= root.handle-size / 2 && abs(y - max(root.start-y, root.current-y)) <= root.handle-size / 2) {
-                    return "sw";
-                }
-                if (abs(x - min(root.start-x, root.current-x)) <= root.handle-size / 2 && abs(y - (min(root.start-y, root.current-y) + max(root.start-y, root.current-y)) / 2) <= root.handle-size / 2) {
-                    return "w";
-                }
-                return "";
-            }
-            property <bool> is-initial-selecting: false;
             pointer-event(event) => {
-                // 在每次鼠标移动时更新全局变量
-                root.current-handle = self.get-handle-at-point(self.mouse-x / 1px, self.mouse-y / 1px);
                 if (event.kind == PointerEventKind.down) {
-                    if (root.current-handle != "") {
-                        root.is-resizing = true;
-                        root.resize-mode = root.current-handle;
-                    } else if (root.is-selecting && self.mouse-x / 1px >= min(root.start-x, root.current-x) && self.mouse-x / 1px <= max(root.start-x, root.current-x) && self.mouse-y / 1px >= min(root.start-y, root.current-y) && self.mouse-y / 1px <= max(root.start-y, root.current-y)) {
-                        root.is-dragging = true;
-                        root.drag-offset-x = self.mouse-x / 1px - min(root.start-x, root.current-x);
-                        root.drag-offset-y = self.mouse-y / 1px - min(root.start-y, root.current-y);
-                    } else if (!root.is-selecting) {
-                        root.start-x = self.mouse-x / 1px;
-                        root.start-y = self.mouse-y / 1px;
-                        root.current-x = self.mouse-x / 1px;
-                        root.current-y = self.mouse-y / 1px;
-                        root.is-selecting = true;
-                        root.show-mask = true;
-                        root.is-dragging = false;
-                        self.is-initial-selecting = true;
-                    }
+                    root.mouse-event("down", self.mouse-x / 1px, self.mouse-y / 1px);
                 } else if (event.kind == PointerEventKind.move) {
-                    if (root.is-resizing) {
-                        if (root.resize-mode == "nw") {
-                            root.start-x = max(0, min(self.mouse-x / 1px, root.current-x - 10));
-                            root.start-y = max(0, min(self.mouse-y / 1px, root.current-y - 10));
-                        } else if (root.resize-mode == "n") {
-                            root.start-y = max(0, min(self.mouse-y / 1px, root.current-y - 10));
-                        } else if (root.resize-mode == "ne") {
-                            root.current-x = min(root.width / 1px, max(self.mouse-x / 1px, root.start-x + 10));
-                            root.start-y = max(0, min(self.mouse-y / 1px, root.current-y - 10));
-                        } else if (root.resize-mode == "e") {
-                            root.current-x = min(root.width / 1px, max(self.mouse-x / 1px, root.start-x + 10));
-                        } else if (root.resize-mode == "se") {
-                            root.current-x = min(root.width / 1px, max(self.mouse-x / 1px, root.start-x + 10));
-                            root.current-y = min(root.height / 1px, max(self.mouse-y / 1px, root.start-y + 10));
-                        } else if (root.resize-mode == "s") {
-                            root.current-y = min(root.height / 1px, max(self.mouse-y / 1px, root.start-y + 10));
-                        } else if (root.resize-mode == "sw") {
-                            root.start-x = max(0, min(self.mouse-x / 1px, root.current-x - 10));
-                            root.current-y = min(root.height / 1px, max(self.mouse-y / 1px, root.start-y + 10));
-                        } else if (root.resize-mode == "w") {
-                            root.start-x = max(0, min(self.mouse-x / 1px, root.current-x - 10));
-                        }
-                    } else if (root.is-dragging) {
-                        root.box-width = abs(root.current-x - root.start-x);
-                        root.box-height = abs(root.current-y - root.start-y);
-                        root.start-x = max(0, min(self.mouse-x / 1px - root.drag-offset-x, root.width / 1px - root.box-width));
-                        root.start-y = max(0, min(self.mouse-y / 1px - root.drag-offset-y, root.height / 1px - root.box-height));
-                        root.current-x = root.start-x + root.box-width;
-                        root.current-y = root.start-y + root.box-height;
-                    } else if (self.is-initial-selecting) {
-                        root.current-x = self.mouse-x / 1px;
-                        root.current-y = self.mouse-y / 1px;
-                    } else {
-                        if (root.current-handle == "nw" || root.current-handle == "se") {
-                            self.mouse-cursor = MouseCursor.nw-resize;
-                        } else if (root.current-handle == "n" || root.current-handle == "s") {
-                            self.mouse-cursor = MouseCursor.ns-resize;
-                        } else if (root.current-handle == "ne" || root.current-handle == "sw") {
-                            self.mouse-cursor = MouseCursor.ne-resize;
-                        } else if (root.current-handle == "e" || root.current-handle == "w") {
-                            self.mouse-cursor = MouseCursor.ew-resize;
-                        } else if (root.is-selecting && self.mouse-x / 1px >= min(root.start-x, root.current-x) && self.mouse-x / 1px <= max(root.start-x, root.current-x) && self.mouse-y / 1px >= min(root.start-y, root.current-y) && self.mouse-y / 1px <= max(root.start-y, root.current-y)) {
-                            self.mouse-cursor = MouseCursor.crosshair;
-                        } else if (root.is-selecting) {
-                            self.mouse-cursor = MouseCursor.not-allowed;
-                        } else {
-                            self.mouse-cursor = MouseCursor.crosshair;
-                        }
-                    }
+                    root.mouse-event("move", self.mouse-x / 1px, self.mouse-y / 1px);
                 } else if (event.kind == PointerEventKind.up) {
-                    if (root.is-resizing) {
-                        root.is-resizing = false;
-                        root.resize-mode = "";
-                    } else if (root.is-dragging) {
-                        root.is-dragging = false;
-                    } else if (self.is-initial-selecting) {
-                        self.is-initial-selecting = false;
-                        if (abs(root.current-x - root.start-x) < 5 || abs(root.current-y - root.start-y) < 5) {
-                            root.is-selecting = false;
-                            root.show-mask = false;
-                        }
-                    }
+                    root.mouse-event("up", self.mouse-x / 1px, self.mouse-y / 1px);
                 }
                 EventResult.accept
             }
         }
 
+        // 工具栏
         Rectangle {
-            property <bool> toolbar-on-top: max(root.start-y, root.current-y) + root.toolbar-height + root.toolbar-padding > root.height / 1px;
-            property <float> toolbar-width: root.toolbar-icons.length * root.icon-size + (root.toolbar-icons.length - 1) * root.icon-spacing + 2 * root.toolbar-padding;
+            property <bool> toolbar-on-top: max(root.start-y, root.current-y) + root.toolbar-height + root.toolbar-margin + 40 > root.height / 1px;
+            property <float> toolbar-width: root.toolbar-icons.length * root.icon-hover-size + (root.toolbar-icons.length - 1) * root.icon-spacing + 2 * root.toolbar-padding;
             x: min(max(min(root.start-x, root.current-x), 0), root.width / 1px - toolbar-width) * 1px;
-            y: toolbar-on-top ? max(0, min(root.start-y, root.current-y) - root.toolbar-height - root.toolbar-padding) * 1px : (max(root.start-y, root.current-y) + root.toolbar-padding) * 1px;
+            y: toolbar-on-top ? max(0, min(root.start-y, root.current-y) - root.toolbar-height - root.toolbar-margin) * 1px : (max(root.start-y, root.current-y) + root.toolbar-margin) * 1px;
             width: toolbar-width * 1px;
             height: root.toolbar-height * 1px;
             background: root.toolbar-background;
@@ -356,39 +839,38 @@ export component AppWindow inherits Window {
             border-width: 1px;
             border-color: root.toolbar-border;
             visible: root.is-selecting && root.show-decorations;
-            HorizontalLayout {
-                padding: root.toolbar-padding * 1px;
-                spacing: root.icon-spacing * 1px;
+            VerticalLayout {
+                padding: 0px;
                 alignment: center;
-                for icon[index] in root.toolbar-icons: Rectangle {
-                    width: root.icon-size * 1px;
-                    height: root.icon-size * 1px;
-                    background: icon-area.has-hover ? root.icon-hover-color : transparent;
-                    border-radius: 3px;
-                    TouchArea {
-                        icon-area := TouchArea {
+                HorizontalLayout {
+                    padding-left: root.toolbar-padding * 1px;
+                    padding-right: root.toolbar-padding * 1px;
+                    spacing: root.icon-spacing * 1px;
+                    alignment: center;
+                    for toolbar-item[index] in root.toolbar-icons: Rectangle {
+                        width: root.icon-hover-size * 1px;
+                        height: root.icon-hover-size * 1px;
+                        background: touch-area.has-hover ? root.icon-hover-color : transparent;
+                        border-radius: 4px;
+                        touch-area := TouchArea {
                             clicked => {
-                                root.selected-icon = icon;
-                                if (icon == "save") {
-                                    root.debug-log("保存按钮被点击");
-                                } else if (icon == "copy") {
-                                    root.debug-log("复制按钮被点击");
-                                } else if (icon == "cancel") {
-                                    root.debug-log("取消按钮被点击");
-                                    root.cancel-capture();
-                                } else if (icon == "settings") {
-                                    root.debug-log("设置按钮被点击");
+                                root.toolbar-clicked(toolbar-item.name);
+                            }
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            HorizontalLayout {
+                                alignment: center;
+                                Image {
+                                    width: root.icon-size * 1px;
+                                    height: root.icon-size * 1px;
+                                    source: toolbar-item.path;
+                                    image-fit: contain;
+                                    colorize: root.selected-icon == toolbar-item.name ? root.icon-selected-color : root.icon-color;
                                 }
                             }
                         }
-                    }
-
-                    Image {
-                        width: parent.width;
-                        height: parent.height;
-                        source: @image-url("../resources/square.svg");
-                        image-fit: contain;
-                        colorize: root.selected-icon == icon ? root.icon-selected-color : root.icon-color;
                     }
                 }
             }

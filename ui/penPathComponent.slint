@@ -1,0 +1,24 @@
+export component PenPathComponent {
+    in property <float> path-min-x;
+    in property <float> path-max-x;
+    in property <float> path-min-y;
+    in property <float> path-max-y;
+    in property <string> path-commands;
+    in property <color> path-color;
+    in property <float> path-width;
+
+    // 自动计算大小和位置
+    width: (path-max-x - path-min-x + 20) * 1px;
+    height: (path-max-y - path-min-y + 20) * 1px;
+    x: (path-min-x - 10) * 1px;
+    y: (path-min-y - 10) * 1px;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        fill: transparent;
+        stroke: root.path-color;
+        stroke-width: root.path-width * 1px;
+        commands: root.path-commands;
+    }
+}
